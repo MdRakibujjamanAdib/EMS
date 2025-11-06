@@ -189,159 +189,6 @@ export function MailInvitations() {
     }
   };
 
-  const handleSendWithSheetUpdate = async () => {
-    if (!selectedEventId) {
-      alert('Please select an event');
-      return;
-    }
-
-    if (!sheetId.trim()) {
-      alert('Please enter a Google Sheet ID to track email status');
-      return;
-    }
-
-    const unsent = passes.filter((p) => !p.sent_at);
-    if (unsent.length === 0) {
-      alert('All invitations have already been sent!');
-      return;
-    }
-
-    const selectedEvent = events.find((e) => e.id === selectedEventId);
-    if (!selectedEvent) return;
-
-    try {
-      // Read current sheet data to get row numbers and detect format
-      const sheetData = await readGoogleSheet(sheetId, sheetRange);
-      const emailToRowMap = new Map<string, number>();
-      let isNameEmailFormat = false; // Format 1: Name (A), Email (B), Status (C), Timestamp (D)
-      
-      if (sheetData && sheetData.length > 0) {
-        // Detect format: check if column B has emails (Name+Email format) or column A has emails (Email only format)
-        const startRow = (sheetData[0][0]?.toLowerCase().includes('name') || sheetData[0][1]?.toLowerCase().includes('email')) ? 1 : 0;
-        
-        // Check first data row to determine format
-        if (sheetData[startRow] && sheetData[startRow].length >= 2 && sheetData[startRow][1]?.includes('@')) {
-          isNameEmailFormat = true; // Format 1: Name in A, Email in B
-        }
-        
-        for (let i = startRow; i < sheetData.length; i++) {
-          let email = '';
-          if (isNameEmailFormat && sheetData[i][1]) {
-            email = sheetData[i][1].trim().toLowerCase(); // Email is in column B
-          } else if (sheetData[i][0]) {
-            email = sheetData[i][0].trim().toLowerCase(); // Email is in column A
-          }
-          
-          if (email) {
-            emailToRowMap.set(email, i + 1); // +1 for 1-indexed rows
-          }
-        }
-      }
-
-      setStatus({
-        total: unsent.length,
-        sent: 0,
-        failed: 0,
-        current: '',
-        inProgress: true,
-      });
-
-      addLog('Starting email send process with sheet updates...');
-
-      for (const pass of unsent) {
-        setStatus((prev) => ({ ...prev, current: pass.guest_name }));
-        addLog(`Sending to ${pass.guest_name} (${pass.guest_email})...`);
-
-        try {
-          // Generate QR code
-          const qrCodeDataUrl = await generateQRCodeDataURL(pass.code);
-
-          // Generate HTML email
-          const htmlBody = generateInvitationHTML({
-            guestName: pass.guest_name,
-            eventTitle: selectedEvent.title,
-            eventDescription: selectedEvent.description,
-            message,
-            qrCodeDataUrl,
-            bgColor: selectedEvent.bg_color,
-            accentColor: selectedEvent.accent_color,
-          });
-
-          // Send email via Gmail API
-          await sendGmail({
-            to: pass.guest_email,
-            subject: subject,
-            body: message.replace('{NAME}', pass.guest_name),
-            html: htmlBody,
-          });
-
-          // Update pass as sent
-          const passRef = doc(db, 'passes', pass.id);
-          await updateDoc(passRef, {
-            sent_at: serverTimestamp(),
-          });
-
-          // Update sheet with success status
-          const rowNum = emailToRowMap.get(pass.guest_email.toLowerCase());
-          if (rowNum) {
-            const sheetName = sheetRange.split('!')[0];
-            // Update Status (C) and Timestamp (D) for Name+Email format
-            // or Status (B) and Timestamp (C) for Email-only format
-            const statusCol = isNameEmailFormat ? 'C' : 'B';
-            const timestampCol = isNameEmailFormat ? 'D' : 'C';
-            await updateGoogleSheet(sheetId, `${sheetName}!${statusCol}${rowNum}:${timestampCol}${rowNum}`, [
-              ['Sent', new Date().toLocaleString()],
-            ]);
-          }
-
-          setStatus((prev) => ({ ...prev, sent: prev.sent + 1 }));
-          addLog(`✓ Sent to ${pass.guest_name} and updated sheet`);
-        } catch (error: any) {
-          // console.error('Error sending email:', error);
-          
-          // Determine status based on error
-          let failureStatus = 'Failed';
-          if (error.message?.toLowerCase().includes('address not found') || 
-              error.message?.toLowerCase().includes('invalid') ||
-              error.message?.toLowerCase().includes('recipient address rejected')) {
-            failureStatus = 'Invalid';
-          }
-          
-          // Update sheet with failure/invalid status
-          const rowNum = emailToRowMap.get(pass.guest_email.toLowerCase());
-          if (rowNum) {
-            try {
-              const sheetName = sheetRange.split('!')[0];
-              const statusCol = isNameEmailFormat ? 'C' : 'B';
-              const timestampCol = isNameEmailFormat ? 'D' : 'C';
-              await updateGoogleSheet(sheetId, `${sheetName}!${statusCol}${rowNum}:${timestampCol}${rowNum}`, [
-                [failureStatus, new Date().toLocaleString()],
-              ]);
-            } catch (updateError: any) {
-              // console.error('Error updating sheet status:', updateError);
-              if (updateError.message?.includes('insufficient authentication scopes')) {
-                addLog('⚠ Cannot update sheet - please sign out and sign in again for write access');
-              }
-            }
-          }
-
-          setStatus((prev) => ({ ...prev, failed: prev.failed + 1 }));
-          addLog(`✗ Failed to send to ${pass.guest_name}: ${error.message} (Status: ${failureStatus})`);
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-
-      addLog('Email send process completed!');
-      setStatus((prev) => ({ ...prev, inProgress: false, current: '' }));
-      fetchPasses();
-    } catch (error: any) {
-      // console.error('Error in send process:', error);
-      alert(`Error: ${error.message}`);
-      setStatus((prev) => ({ ...prev, inProgress: false, current: '' }));
-    }
-  };
-
   const handleSendEmails = async () => {
     if (passes.length === 0) {
       alert('No pending invitations to send');
@@ -405,8 +252,8 @@ export function MailInvitations() {
           sent_at: serverTimestamp(),
         });
 
-        // Update Google Sheet if this pass came from a sheet
-        if (pass.sheet_id && sheetId) {
+        // Update Google Sheet if this pass came from a sheet (automatic tracking)
+        if (pass.sheet_id) {
           try {
             const sheetData = await readGoogleSheet(pass.sheet_id, sheetRange);
             if (sheetData && sheetData.length > 0) {
@@ -429,11 +276,12 @@ export function MailInvitations() {
                 await updateGoogleSheet(pass.sheet_id, `${sheetName}!${statusCol}${emailIndex + 1}:${timestampCol}${emailIndex + 1}`, [
                   ['Sent', new Date().toLocaleString()],
                 ]);
+                addLog(`✓ Updated sheet status for ${pass.guest_name}`);
               }
             }
           } catch (sheetError) {
             // console.error('Error updating sheet:', sheetError);
-            // Don't fail the email send if sheet update fails
+            addLog(`⚠ Could not update sheet for ${pass.guest_name} (email sent successfully)`);
           }
         }
 
@@ -461,8 +309,8 @@ export function MailInvitations() {
           failureStatus = 'invalid';
         }
         
-        // Update Google Sheet if this pass came from a sheet
-        if (pass.sheet_id && sheetId) {
+        // Update Google Sheet if this pass came from a sheet (automatic tracking for failures too)
+        if (pass.sheet_id) {
           try {
             const sheetData = await readGoogleSheet(pass.sheet_id, sheetRange);
             if (sheetData && sheetData.length > 0) {
@@ -485,6 +333,7 @@ export function MailInvitations() {
                 await updateGoogleSheet(pass.sheet_id, `${sheetName}!${statusCol}${emailIndex + 1}:${timestampCol}${emailIndex + 1}`, [
                   [failureStatus === 'invalid' ? 'Invalid' : 'Failed', new Date().toLocaleString()],
                 ]);
+                addLog(`✓ Updated sheet status for ${pass.guest_name}`);
               }
             }
           } catch (sheetError) {
@@ -581,7 +430,7 @@ export function MailInvitations() {
 
         try {
           const passesRef = collection(db, 'passes');
-          const docRef = await addDoc(passesRef, {
+          await addDoc(passesRef, {
             event_id: selectedEventId,
             code,
             guest_name: name, // Use actual name from sheet
@@ -726,19 +575,6 @@ export function MailInvitations() {
                   <Plus className="w-5 h-5 mr-2" />
                   Create New Sheet
                 </Button>
-
-                {sheetId && (
-                  <Button
-                    onClick={handleSendWithSheetUpdate}
-                    disabled={status.inProgress || passes.length === 0}
-                    isLoading={status.inProgress}
-                    variant="secondary"
-                    className="w-full"
-                  >
-                    <Mail className="w-5 h-5 mr-2" />
-                    Send & Track in Sheet
-                  </Button>
-                )}
               </div>
             </CardBody>
           </Card>
