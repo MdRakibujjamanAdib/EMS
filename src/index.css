@@ -1,0 +1,145 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom QR Scanner Overlay - Mobile First Design */
+
+/* Scanner container positioning */
+.qr-scanner-container {
+  position: relative;
+  overflow: hidden;
+}
+
+/* Dark overlay with scan area cutout */
+.qr-scanner-container::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(85%, 280px);
+  height: min(85%, 280px);
+  border-radius: 20px;
+  box-shadow: 0 0 0 99999px rgba(0, 0, 0, 0.75);
+  z-index: 10;
+  pointer-events: none;
+  animation: scan-pulse 2s ease-in-out infinite;
+}
+
+/* Corner brackets - Simple L-shapes */
+/* Corner brackets removed - clean scan area */
+.qr-scanner-container::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(70%, 350px);
+  height: min(70%, 350px);
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 11;
+  
+  /* Corners removed */
+  background: none;
+}
+
+/* Scanning animation */
+@keyframes scan-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 99999px rgba(0, 0, 0, 0.75);
+  }
+  50% {
+    box-shadow: 
+      0 0 0 99999px rgba(0, 0, 0, 0.75),
+      0 0 40px rgba(255, 193, 7, 0.3),
+      inset 0 0 40px rgba(255, 193, 7, 0.1);
+  }
+}
+
+/* Scanning line animation */
+.qr-scanner-container .scan-line {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(85%, 280px);
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 193, 7, 0.8), #FFC107, rgba(255, 193, 7, 0.8), transparent);
+  box-shadow: 0 0 8px rgba(255, 193, 7, 0.6);
+  z-index: 12;
+  pointer-events: none;
+  animation: scan-line 2s linear infinite;
+  border-radius: 2px;
+}
+
+@keyframes scan-line {
+  0% {
+    transform: translate(-50%, calc(-42%));
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, calc(42%));
+    opacity: 0;
+  }
+}
+
+/* Mobile specific optimizations */
+@media (max-width: 768px) {
+  .qr-scanner-container::before {
+    width: min(85%, 280px);
+    height: min(85%, 280px);
+  }
+  
+  .qr-scanner-container::after {
+    width: min(85%, 280px);
+    height: min(85%, 280px);
+    /* Corners removed on mobile too */
+    background: none;
+  }
+  
+  .qr-scanner-container .scan-line {
+    width: min(85%, 280px);
+    height: 3px;
+  }
+}
+
+/* Desktop optimizations */
+@media (min-width: 769px) {
+  .qr-scanner-container::before {
+    width: min(70%, 350px);
+    height: min(70%, 350px);
+  }
+  
+  .qr-scanner-container::after {
+    width: min(70%, 350px);
+    height: min(70%, 350px);
+    background-size:
+      4px 45px, 45px 4px,
+      4px 45px, 45px 4px,
+      4px 45px, 45px 4px,
+      4px 45px, 45px 4px;
+    background-position:
+      0 0, 0 0,
+      100% 0, calc(100% - 45px) 0,
+      0 100%, 0 calc(100% - 4px),
+      100% 100%, calc(100% - 45px) calc(100% - 4px);
+  }
+  
+  .qr-scanner-container .scan-line {
+    width: min(70%, 350px);
+  }
+}
+
+/* Hide default QR scanner highlights */
+.scan-region-highlight,
+.scan-region-highlight-svg,
+.code-outline-highlight {
+  display: none !important;
+}
